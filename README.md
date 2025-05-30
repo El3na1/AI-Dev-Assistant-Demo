@@ -1,14 +1,13 @@
-# AI Dev Assistant Demo
+## 🤖 Automated AI Code Review
 
-This project demonstrates how to use AI tools to:
-- Detect bugs (GitHub Copilot, DeepSource)
-- Analyze performance (dotTrace)
-- Automate code reviews (DeepSource)
+This project uses:
 
-## How to Run
+- **dotnet-format** — C# code analyzer and fixer
+- **ReviewDog** — Posts issues as PR comments
 
-1. Clone the repo.
-2. Open in Visual Studio.
-3. Run the API and test `/login`.
-4. Profile `DataProcessingService` with dotTrace.
-5. Create a pull request and check DeepSource review.
+### How to Trigger
+
+1. Create a new branch
+2. Modify a `.cs` file (introduce style issues or bad patterns)
+3. Open a pull request
+4. ReviewDog will comment directly on the code with suggestions

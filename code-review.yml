@@ -1,0 +1,31 @@
+name: ReviewDog Code Review
+
+on: [pull_request]
+
+jobs:
+  lint:
+    name: Run dotnet analyzers with ReviewDog
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.x'
+
+      - name: Install dotnet-format
+        run: dotnet tool install -g dotnet-format
+
+      - name: Run dotnet-format with ReviewDog
+        run: |
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet format --diagnostics all --verbosity diagnostic --report ./format-report.txt || true
+          cat format-report.txt
+        continue-on-error: true
+
+      - name: Run ReviewDog to post PR comments
+        uses: reviewdog/action-setup@v1
+      - run: |
+          reviewdog -f=checkstyle -name="dotnet-format" -reporter=github-pr-check < format-report.txt
