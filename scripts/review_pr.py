@@ -7,7 +7,7 @@ import sys
 import json
 
 event_path = os.getenv("GITHUB_EVENT_PATH")
-if not event_path or not os.path.exists(event_path)
+if not event_path or not os.path.exists(event_path):
     print("Error: GITHUB_EVENT_PATH not found.")
     sys.exit(1)
     
