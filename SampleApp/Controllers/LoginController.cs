@@ -12,7 +12,10 @@ namespace SampleApp.Controllers
         {
             // Intentionally insecure logic for demo purposes
             if (user.Username == "admin" && user.Password == "1234")
+            {
                 return Ok("Logged in!");
+            }
+
             return Unauthorized();
         }
     }

@@ -1,35 +1,57 @@
 #!/usr/bin/env python3
 import os
-import openai
-import requests
 import sys
+import json
+import requests
+from openai import OpenAI
 
-GITHUB_REPO = os.getenv("GITHUB_REPOSITORY")  # e.g., user/repo
-PR_NUMBER = os.getenv("GITHUB_REF", "").split("/")[-1]  # Extract PR number
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+def get_env_var(name):
+    value = os.getenv(name)
+    if not value:
+        print(f"Error: Missing environment variable {name}")
+        sys.exit(1)
+    return value
 
-openai.api_key = OPENAI_API_KEY
+GITHUB_REPO = get_env_var("GITHUB_REPOSITORY")
+GITHUB_TOKEN = get_env_var("GITHUB_TOKEN")
+OPENAI_API_KEY = get_env_var("OPENAI_API_KEY")
+EVENT_PATH = get_env_var("GITHUB_EVENT_PATH")
+
+# Load PR number from event payload
+try:
+    with open(EVENT_PATH, "r") as f:
+        event = json.load(f)
+    PR_NUMBER = event["pull_request"]["number"]
+except Exception as e:
+    print(f"Error reading PR number from event payload: {e}")
+    sys.exit(1)
 
 headers = {
     "Authorization": f"token {GITHUB_TOKEN}",
     "Accept": "application/vnd.github.v3+json"
 }
 
-# Step 1: Get pull request diff
-diff_url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}"
-diff_response = requests.get(diff_url, headers=headers)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-if diff_response.status_code != 200:
-    print("Failed to fetch PR info:", diff_response.text)
-    sys.exit(1)
+def fetch_pr_diff():
+    diff_url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}"
+    pr_response = requests.get(diff_url, headers=headers)
+    if pr_response.status_code != 200:
+        print("Failed to fetch PR info:", pr_response.text)
+        sys.exit(1)
+    pr_data = pr_response.json()
+    diff_url = pr_data.get("diff_url")
+    if not diff_url:
+        print("No diff URL found in PR data.")
+        sys.exit(1)
+    diff_response = requests.get(diff_url, headers=headers)
+    if diff_response.status_code != 200:
+        print("Failed to fetch diff:", diff_response.text)
+        sys.exit(1)
+    return diff_response.text
 
-pr_data = diff_response.json()
-diff_url = pr_data.get("diff_url")
-diff_text = requests.get(diff_url, headers=headers).text
-
-# Step 2: Send to OpenAI
-prompt = f"""You are an experienced C# code reviewer.
+def generate_review_comments(diff_text):
+    prompt = f"""You are an experienced C# code reviewer.
 Review the following pull request diff and return a JSON array of review comments like this:
 
 [
@@ -43,36 +65,50 @@ Review the following pull request diff and return a JSON array of review comment
 Diff:
 {diff_text}
 """
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
+        )
+        response_text = response.choices[0].message.content
+        suggestions = json.loads(response_text)
+        return suggestions
+    except Exception as e:
+        print("Error during OpenAI call or JSON parsing:", e)
+        sys.exit(1)
 
-completion = openai.ChatCompletion.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": prompt}],
-    temperature=0.3
-)
-
-try:
-    suggestions = eval(completion["choices"][0]["message"]["content"])  # Use JSON-safe parsing in production
-except Exception as e:
-    print("Failed to parse GPT response:", e)
-    sys.exit(1)
-
-# Step 3: Post comments to PR
-for s in suggestions:
-    file_path = s["file"]
-    line = s["line"]
-    body = s["comment"]
-
+def post_comment(file_path, line, body):
     comment_payload = {
         "body": body,
         "path": file_path,
         "line": line,
         "side": "RIGHT"
     }
-
     comments_url = f"https://api.github.com/repos/{GITHUB_REPO}/pulls/{PR_NUMBER}/comments"
-    r = requests.post(comments_url, headers=headers, json=comment_payload)
-
-    if r.status_code not in [200, 201]:
-        print(f"Failed to comment on {file_path}:{line} - {r.status_code}: {r.text}")
+    response = requests.post(comments_url, headers=headers, json=comment_payload)
+    if response.status_code not in [200, 201]:
+        print(f"Failed to comment on {file_path}:{line} - {response.status_code}: {response.text}")
     else:
         print(f"Comment posted to {file_path}:{line}")
+
+def main():
+    print("Fetching diff...")
+    diff = fetch_pr_diff()
+
+    print("Generating review suggestions with GPT...")
+    suggestions = generate_review_comments(diff)
+
+    if not suggestions:
+        print("No comments generated.")
+        return
+
+    print("Posting comments to GitHub...")
+    for comment in suggestions:
+        try:
+            post_comment(comment["file"], comment["line"], comment["comment"])
+        except KeyError:
+            print("Invalid comment format:", comment)
+
+if __name__ == "__main__":
+    main()
