@@ -4,8 +4,18 @@ import openai
 import requests
 import sys
 
+import json
+
+event_path = os.getenv("GITHUB_EVENT_PATH")
+if not event_path or not os.path.exists(event_path)
+    print("Error: GITHUB_EVENT_PATH not found.")
+    sys.exit(1)
+    
+with open(event_path, "r") as f:
+    event = json.load(f)
+
 GITHUB_REPO = os.getenv("GITHUB_REPOSITORY")  # e.g., user/repo
-PR_NUMBER = os.getenv("GITHUB_REF", "").split("/")[-1]  # Extract PR number
+PR_NUMBER = event["pull_request"]["number"]  # Extract PR number
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
